@@ -1,0 +1,52 @@
+@startuml C4_Container_IoT_Observability
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Container-диаграмма — Платформа агрегации логов IoT-шлюзов
+
+Person(ops, "SRE / Дежурный инженер", "Расследует инциденты, строит дашборды, получает алерты")
+
+System_Boundary(edge, "Edge-уровень (~1000 IoT-шлюзов)") {
+    Container(app, "Приложения шлюза", "systemd-сервисы, Linux ARM", "Пишут структурированные логи в /var/log/* и journald")
+    Container(fluentbit, "Fluent Bit", "C, ~5–15 МБ RSS", "Хвостит лог-файлы, парсит, батчит, навешивает метки, отправляет через Loki push API. Дисковый буфер для backpressure и работы офлайн")
+}
+
+System_Boundary(net, "Сеть") {
+    Container(lb, "NGINX / L7-балансировщик", "Терминация TLS, опционально", "Балансирует push-трафик между Loki distributor'ами. Обеспечивает горизонтальное масштабирование пути записи")
+}
+
+System_Boundary(buf, "Опциональный буфер (будущее)") {
+    ContainerQueue(kafka, "Kafka", "Топик логов, N партиций", "Развязывает приём от хранилища; гасит всплески и недоступность Loki write path")
+    Container(consumer, "Loki Forwarder", "Go-сервис / Vector", "Читает Kafka, пишет в Loki через push API")
+}
+
+System_Boundary(central, "Центральный стек наблюдаемости") {
+    Container(distributor, "Loki Distributor", "Go", "Валидирует, хеширует, реплицирует потоки на ingester'ы")
+    Container(ingester, "Loki Ingester", "Go", "Собирает чанки в памяти, сбрасывает в объектное хранилище")
+    ContainerDb(objstore, "Объектное хранилище", "S3 / MinIO / GCS", "Долговременное хранение чанков и индекса")
+    Container(querier, "Loki Querier / Query Frontend", "Go", "Выполняет LogQL-запросы, шардирует и кеширует")
+    Container(grafana, "Grafana", "Web UI", "Дашборды, ad-hoc LogQL, UI алертинга")
+    Container(alerting, "Grafana Alerting / Ruler", "LogQL alert rules", "Вычисляет правила, отправляет нотификации")
+    Container(notifier, "Alertmanager / Webhooks", "SMTP, Slack, PagerDuty", "Маршрутизация и дедупликация алертов")
+}
+
+Rel(app, fluentbit, "Пишет строки логов", "file tail / journald")
+Rel(fluentbit, lb, "Отправляет батчи логов", "HTTPS — Loki push API\n(/loki/api/v1/push, snappy+protobuf)\nкаждые 1–5с, gzip, retry+backoff")
+
+Rel(lb, distributor, "Проксирует", "HTTP")
+Rel_R(fluentbit, kafka, "Опциональный путь под нагрузкой\nпишет в топик логов", "Kafka protocol, TLS")
+Rel(kafka, consumer, "Читает", "Kafka protocol")
+Rel(consumer, lb, "Пишет в Loki", "HTTPS push API")
+
+Rel(distributor, ingester, "Реплицирует потоки (RF=3)", "gRPC")
+Rel(ingester, objstore, "Сбрасывает чанки + индекс", "S3 API")
+Rel(querier, ingester, "Live tail / свежие данные", "gRPC")
+Rel(querier, objstore, "Чтение исторических данных", "S3 API")
+
+Rel(grafana, querier, "LogQL-запросы", "HTTP")
+Rel(alerting, querier, "Вычисляет правила", "HTTP")
+Rel(alerting, notifier, "Триггерит алерты", "HTTP / SMTP")
+Rel(ops, grafana, "Исследует логи, строит дашборды", "HTTPS")
+Rel(notifier, ops, "Пейджит / уведомляет", "Slack, Email, PagerDuty")
+
+@enduml
