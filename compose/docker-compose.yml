@@ -1,0 +1,129 @@
+name: iot-observability
+
+services:
+
+  # ── Object storage (S3-compatible) ──────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme123}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  # Creates the loki-chunks bucket on first start
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme123}
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+        mc mb -p local/loki-chunks;
+        echo 'bucket loki-chunks ready';
+      "
+
+  # ── Log storage ─────────────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.0.0
+    command: -config.file=/etc/loki/loki-config.yaml -config.expand-env=true
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme123}
+    volumes:
+      - ./config/loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  # ── L7 proxy / TLS terminator (C4: NGINX L7-балансировщик) ──────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      loki:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Edge simulation: gateway applications ───────────────────────────────────
+  log-generator:
+    image: alpine:3.19
+    entrypoint: ["/bin/sh", "/scripts/log-generator.sh"]
+    volumes:
+      - ./scripts/log-generator.sh:/scripts/log-generator.sh:ro
+      - gateway-logs:/var/log/gateway
+    restart: unless-stopped
+
+  # ── Edge simulation: Fluent Bit log shipper ─────────────────────────────────
+  fluent-bit:
+    image: fluent/fluent-bit:3.0
+    volumes:
+      - ./config/fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./config/fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - gateway-logs:/var/log/gateway:ro
+      - fluent-bit-buffer:/var/log/flb-storage
+    ports:
+      - "2020:2020"   # Fluent Bit metrics endpoint
+    depends_on:
+      nginx:
+        condition: service_healthy
+      log-generator:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── Visualization & alerting ─────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: dark
+    volumes:
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      loki:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  minio-data:
+  loki-data:
+  fluent-bit-buffer:
+  gateway-logs:
+  grafana-data:
