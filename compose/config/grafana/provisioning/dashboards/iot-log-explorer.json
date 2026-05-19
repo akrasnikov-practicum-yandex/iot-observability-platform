@@ -1,0 +1,141 @@
+{
+  "annotations": { "list": [] },
+  "description": "IoT Log Explorer — filter and search logs by device, service, level and text",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Log Volume (logs/min by host & level)",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "loki", "uid": "loki-local" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki-local" },
+          "expr": "sum by (host, level) (rate({job=\"fluentbit\", host=~\"$host\", service=~\"$service\", level=~\"$level\"}[1m]))",
+          "legendFormat": "{{host}} / {{level}}",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "logs",
+      "title": "Log Stream",
+      "gridPos": { "h": 22, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "loki", "uid": "loki-local" },
+      "options": {
+        "dedupStrategy": "none",
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true,
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki-local" },
+          "expr": "{job=\"fluentbit\", host=~\"$host\", service=~\"$service\", level=~\"$level\"} |~ \"$search\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["iot", "loki", "logs", "search"],
+  "templating": {
+    "list": [
+      {
+        "name": "host",
+        "label": "Device",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki-local" },
+        "definition": "label_values({job=\"fluentbit\"}, host)",
+        "query": {
+          "label": "host",
+          "refId": "StandardVariableQuery",
+          "stream": "{job=\"fluentbit\"}",
+          "type": 1
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {},
+        "hide": 0,
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki-local" },
+        "definition": "label_values({job=\"fluentbit\"}, service)",
+        "query": {
+          "label": "service",
+          "refId": "StandardVariableQuery",
+          "stream": "{job=\"fluentbit\"}",
+          "type": 1
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {},
+        "hide": 0,
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "level",
+        "label": "Level",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki-local" },
+        "definition": "label_values({job=\"fluentbit\"}, level)",
+        "query": {
+          "label": "level",
+          "refId": "StandardVariableQuery",
+          "stream": "{job=\"fluentbit\"}",
+          "type": 1
+        },
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {},
+        "hide": 0,
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "search",
+        "label": "Search",
+        "type": "textbox",
+        "query": "",
+        "current": { "selected": false, "text": "", "value": "" },
+        "hide": 0
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "IoT Log Explorer",
+  "uid": "iot-log-explorer-v1",
+  "version": 1
+}

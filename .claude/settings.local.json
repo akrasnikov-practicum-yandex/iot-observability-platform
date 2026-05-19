@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"d:\\\\Project\\\\pytronic\\\\iot-observability-platform\\\\compose\\\\scripts\\\\log-generator.sh\"\\); $text = [System.Text.Encoding]::UTF8.GetString\\($bytes\\); $crlf = \\([regex]::Matches\\($text, \"`r`n\"\\)\\).Count; $cr = \\([regex]::Matches\\($text, \"`r\"\\)\\).Count - $crlf; Write-Host \"CRLF: $crlf, lone CR: $cr, total lines: $\\($text.Split\\(\"`n\"\\).Count\\)\")"
+    ]
+  }
+}
