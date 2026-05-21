@@ -69,7 +69,26 @@ services:
     volumes:
       - npm-data:/data
       - npm-letsencrypt:/etc/letsencrypt
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:81/api/"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     restart: unless-stopped
+
+  # Registers proxy hosts in NPM via REST API on first start
+  npm-init:
+    image: alpine:3.19
+    depends_on:
+      nginx-proxy-manager:
+        condition: service_healthy
+    environment:
+      NPM_ADMIN_EMAIL: ${NPM_ADMIN_EMAIL:-admin@example.com}
+      NPM_ADMIN_PASSWORD: ${NPM_ADMIN_PASSWORD:-changeme}
+    entrypoint: ["/bin/sh", "-c", "apk add --no-cache curl -q && sh /scripts/npm-init.sh"]
+    volumes:
+      - ./scripts/npm-init.sh:/scripts/npm-init.sh:ro
 
   # ── L7 proxy / TLS terminator (C4: NGINX L7-балансировщик) ──────────────────
   nginx:
