@@ -59,6 +59,18 @@ services:
       retries: 12
       start_period: 30s
 
+  # ── Nginx Proxy Manager (reverse proxy + SSL UI) ────────────────────────────
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - npm-data:/data
+      - npm-letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+
   # ── L7 proxy / TLS terminator (C4: NGINX L7-балансировщик) ──────────────────
   nginx:
     image: nginx:1.27-alpine
@@ -127,3 +139,5 @@ volumes:
   fluent-bit-buffer:
   gateway-logs:
   grafana-data:
+  npm-data:
+  npm-letsencrypt:
